@@ -59,3 +59,64 @@ async fn index(maybe_user: Option<User>) -> Result<Response, AppError> {
         None => Ok(Redirect::to("/login").into_response()),
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use axum::http::StatusCode;
+    use sqlx::PgPool;
+
+    use super::*;
+
+    #[sqlx::test]
+    async fn test_login_registers_new_user(db: PgPool) {
+        let request = LoginForm {
+            username: "alice".to_string(),
+            password: "s3cret".to_string(),
+        };
+
+        let response = login(db.into(), CookieJar::new(), Form(request))
+            .await
+            .expect("success")
+            .into_response();
+
+        assert_eq!(response.status(), StatusCode::SEE_OTHER);
+    }
+
+    #[sqlx::test]
+    async fn test_login_wrong_password_fails(db: PgPool) {
+        let repository: Repository = db.into();
+        UnauthenticatedUser::new("alice".to_string(), "s3cret".to_string())
+            .register(&repository)
+            .await
+            .expect("registration succeeds");
+
+        let request = LoginForm {
+            username: "alice".to_string(),
+            password: "wrong".to_string(),
+        };
+
+        let result = login(repository, CookieJar::new(), Form(request)).await;
+
+        assert!(matches!(result, Err(AppError::InvalidCredentials)));
+    }
+
+    #[tokio::test]
+    async fn test_index_redirects_when_logged_out() {
+        let response = index(None).await.expect("success");
+
+        assert_eq!(response.status(), StatusCode::SEE_OTHER);
+    }
+
+    #[sqlx::test]
+    async fn test_index_greets_logged_in_user(db: PgPool) {
+        let repository: Repository = db.into();
+        let user = UnauthenticatedUser::new("alice".to_string(), "s3cret".to_string())
+            .register(&repository)
+            .await
+            .expect("registration succeeds");
+
+        let response = index(Some(user)).await.expect("success");
+
+        assert_eq!(response.status(), StatusCode::OK);
+    }
+}
