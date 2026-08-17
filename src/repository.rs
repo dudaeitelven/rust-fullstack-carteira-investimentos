@@ -102,3 +102,126 @@ impl From<PgPool> for Repository {
         Self { db }
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use sqlx::PgPool;
+
+    use super::*;
+
+    #[sqlx::test]
+    async fn test_create_and_list_assets(db: PgPool) {
+        let repository: Repository = db.into();
+
+        let created = repository
+            .create_asset("Bitcoin".to_string(), 10.0)
+            .await
+            .expect("success");
+
+        let assets = repository.list_assets().await.expect("success");
+
+        assert_eq!(assets.len(), 1);
+        assert_eq!(assets[0].id, created.id);
+        assert_eq!(assets[0].name, "Bitcoin");
+    }
+
+    #[sqlx::test]
+    async fn test_update_asset_only_name(db: PgPool) {
+        let repository: Repository = db.into();
+        let created = repository
+            .create_asset("Bitcoin".to_string(), 10.0)
+            .await
+            .expect("success");
+
+        let updated = repository
+            .update_asset(created.id, Some("Ethereum".to_string()), None)
+            .await
+            .expect("success")
+            .expect("asset exists");
+
+        assert_eq!(updated.name, "Ethereum");
+        assert_eq!(updated.unit_value, 10.0);
+    }
+
+    #[sqlx::test]
+    async fn test_update_asset_only_unit_value(db: PgPool) {
+        let repository: Repository = db.into();
+        let created = repository
+            .create_asset("Bitcoin".to_string(), 10.0)
+            .await
+            .expect("success");
+
+        let updated = repository
+            .update_asset(created.id, None, Some(99.5))
+            .await
+            .expect("success")
+            .expect("asset exists");
+
+        assert_eq!(updated.name, "Bitcoin");
+        assert_eq!(updated.unit_value, 99.5);
+    }
+
+    #[sqlx::test]
+    async fn test_update_nonexistent_asset_returns_none(db: PgPool) {
+        let repository: Repository = db.into();
+
+        let updated = repository
+            .update_asset(999, Some("Ghost".to_string()), None)
+            .await
+            .expect("success");
+
+        assert!(updated.is_none());
+    }
+
+    #[sqlx::test]
+    async fn test_add_and_get_user_by_name(db: PgPool) {
+        let repository: Repository = db.into();
+
+        let created = repository
+            .add_user("alice", "hashed-password")
+            .await
+            .expect("success");
+
+        let fetched = repository
+            .get_user_by_name("alice")
+            .await
+            .expect("success")
+            .expect("user exists");
+
+        assert_eq!(fetched.id, created.id);
+        assert_eq!(fetched.username, "alice");
+        assert_eq!(fetched.password_hash, "hashed-password");
+    }
+
+    #[sqlx::test]
+    async fn test_get_user_by_name_missing_returns_none(db: PgPool) {
+        let repository: Repository = db.into();
+
+        let fetched = repository
+            .get_user_by_name("nobody")
+            .await
+            .expect("success");
+
+        assert!(fetched.is_none());
+    }
+
+    #[sqlx::test]
+    async fn test_add_duplicate_user_is_unique_violation(db: PgPool) {
+        let repository: Repository = db.into();
+
+        repository
+            .add_user("alice", "hash1")
+            .await
+            .expect("first insert succeeds");
+
+        let err = repository
+            .add_user("alice", "hash2")
+            .await
+            .expect_err("duplicate username should fail");
+
+        match err {
+            sqlx::Error::Database(db_err) => assert!(db_err.is_unique_violation()),
+            other => panic!("expected database error, got {other:?}"),
+        }
+    }
+}
