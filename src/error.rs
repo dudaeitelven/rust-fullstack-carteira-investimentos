@@ -45,3 +45,40 @@ impl IntoResponse for AppError {
         (status, Json(error_response)).into_response()
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_bad_request_status_codes() {
+        assert_eq!(
+            AppError::UsernameTaken.into_response().status(),
+            StatusCode::BAD_REQUEST
+        );
+        assert_eq!(
+            AppError::MissingAuthorization.into_response().status(),
+            StatusCode::BAD_REQUEST
+        );
+    }
+
+    #[test]
+    fn test_unauthorized_status_code() {
+        assert_eq!(
+            AppError::InvalidCredentials.into_response().status(),
+            StatusCode::UNAUTHORIZED
+        );
+    }
+
+    #[test]
+    fn test_not_found_status_codes() {
+        assert_eq!(
+            AppError::AssetDoesNotExist.into_response().status(),
+            StatusCode::NOT_FOUND
+        );
+        assert_eq!(
+            AppError::UserDoesNotExist.into_response().status(),
+            StatusCode::NOT_FOUND
+        );
+    }
+}
